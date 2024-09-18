@@ -38,6 +38,8 @@ def main():
     input_size = (cfg.num_frames, *cfg.image_size)
     vae = build_module(cfg.vae, MODELS)
     latent_size = vae.get_latent_size(input_size)
+    if cfg.quarot:
+        cfg.model['type'] = 'Quarot'+cfg.model['type']
     model = build_module(
         cfg.model,
         MODELS,

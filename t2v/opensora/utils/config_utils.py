@@ -20,6 +20,7 @@ def parse_args(training=False, mode=None):
     parser.add_argument("--gpu", type=str, default="0", help="GPU device")
     parser.add_argument("--outdir", default=None, required=True, type=str, help="path to write results to")
     parser.add_argument("--precompute_text_embeds", default=None, type=str, help="path to load the precomputed text_embeds")
+    parser.add_argument("--quarot", action="store_true", help="whether apply the quarot rotation")
 
     # ======================================================
     # Inference

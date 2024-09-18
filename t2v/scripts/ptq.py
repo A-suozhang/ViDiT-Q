@@ -73,6 +73,10 @@ def main():
     dtype = to_torch_dtype(cfg.dtype)
     set_random_seed(seed=cfg.seed)
 
+    if config.get('quarot', False):
+        if not 'Quarot' in cfg.model['type']:
+            cfg.model['type'] = 'Quarot'+cfg.model['type']
+        # config.quant.activation.quantizer['quarot'] = True
     # ======================================================
     # 3. build model & load weights
     # ======================================================

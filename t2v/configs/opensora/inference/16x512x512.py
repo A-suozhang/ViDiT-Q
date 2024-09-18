@@ -7,7 +7,7 @@ model = dict(
     type="STDiT-XL/2",
     space_scale=1.0,
     time_scale=1.0,
-    enable_flashattn=True, # default is True
+    enable_flashattn=False, # default is True
     enable_layernorm_kernel=False, # default is True
     from_pretrained="PRETRAINED_MODEL"
 )

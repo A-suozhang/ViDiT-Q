@@ -273,9 +273,10 @@ class STDiT(nn.Module):
             from qdiff.quantizer.dynamic_quantizer import DynamicActQuantizer
             # DIRTY, assume that all layers in the stdit model share the same quantization configuration
             MASK_SELECT = True
-            if not isinstance(self.final_layer.linear.act_quantizer, DynamicActQuantizer): # static quant param
-                if self.final_layer.linear.act_quantizer.per_group == 'token':
-                    MASK_SELECT = False
+            if hasattr(self.final_layer.linear, 'act_quantizer'):
+                if not isinstance(self.final_layer.linear.act_quantizer, DynamicActQuantizer): # static quant param
+                    if self.final_layer.linear.act_quantizer.per_group == 'token':
+                        MASK_SELECT = False
 
             if MASK_SELECT:
                 ## Original version: y is smaller 3684/3840
@@ -454,6 +455,8 @@ def recursive_find_module(module, prefix='', save_dict={}):
 @MODELS.register_module("STDiT-XL/2")
 def STDiT_XL_2(from_pretrained=None, **kwargs):
     model = STDiT(depth=28, hidden_size=1152, patch_size=(1, 2, 2), num_heads=16, **kwargs)
+    if 'dtype' in kwargs.keys():
+        model.to(kwargs['dtype'])
     if from_pretrained is not None:
         load_checkpoint(model, from_pretrained)
     # INFO: support separate_qkv when loading the model to fit quantization
@@ -480,5 +483,6 @@ def STDiT_XL_2(from_pretrained=None, **kwargs):
                 delattr(module,'qkv')
                 module.separate_qkv = True
         # if the model are already converted, skip the rest
+
 
     return model

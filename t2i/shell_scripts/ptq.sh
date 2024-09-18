@@ -1,4 +1,4 @@
-EXP_NAME=${2:-"w8a8"}
+EXP_NAME=${2:-"w4a8"}
 
 version="sigma"  # ['alpha','sigma']
 if [ "$version" == "alpha" ]; then

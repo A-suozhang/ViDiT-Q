@@ -20,7 +20,6 @@ class DynamicActQuantizer(ActQuantizer):
 
         # INFO: for dynaimc calculateing quant_params, no handling of mixed_precision/timestep_wise, calculating online
         self.init_quant_params(x, self.per_group, momentum=self.running_stat)
-        
         self.delta = self.delta_list[self.bit_idx, 0]
         self.zero_point = self.zero_point_list[self.bit_idx, 0]
 
@@ -43,5 +42,4 @@ class DynamicActQuantizer(ActQuantizer):
         x_quant_ = self.rounding(x)
         x_dequant = (x_quant - self.zero_point) * self.delta
         return x_dequant
-
 

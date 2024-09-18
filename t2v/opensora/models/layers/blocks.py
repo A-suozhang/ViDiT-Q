@@ -166,6 +166,7 @@ class Attention(nn.Module):
         qkv = qkv.view(qkv_shape).permute(qkv_permute_shape)
         q, k, v = qkv.unbind(0)
         q, k = self.q_norm(q), self.k_norm(k)
+        
         if self.enable_flashattn:
             from flash_attn import flash_attn_func
 

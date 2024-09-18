@@ -30,7 +30,7 @@ scheduler = dict(
 dtype = "fp16"
 
 # Other
-batch_size = 4
+batch_size = 1
 seed = 42
 prompt_path = "./assets/texts/t2v_samples.txt"
 # save_dir = "./generated_videos/fp16"

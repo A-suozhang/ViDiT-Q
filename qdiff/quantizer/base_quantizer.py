@@ -192,6 +192,7 @@ class BaseQuantizer(nn.Module):
         x_min[x_min>0] = 0.
         x_max = x.max(dim=-1)[0] # INFO: used for some meaningless range
         x_max[x_max<0] = 0.
+        x_mean = x.mean(dim=-1)
 
         if self.momentum:
             if not hasattr(self,'x_min'):
@@ -225,7 +226,9 @@ class BaseQuantizer(nn.Module):
             if self.always_zero or self.sym: # always set zero_point as 0, no clue what it is
                 zero_point = torch.zeros_like(delta, device=delta.device)
             else:
-                zero_point = torch.round(-x_min/delta)  # ???: why -x_min, save as unsigned int
+                # INFO: change the quant ZP Plan
+                zero_point = torch.round((x_mean - x_min)/delta)
+                # zero_point = torch.round(-x_min/delta)  # directly use the FP zero, as the zero_point
 
         elif self.scale_method == 'grid_search_lp':
 

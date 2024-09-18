@@ -163,6 +163,7 @@ class QuantLayer(nn.Module):
                 input = torch.cat([input_0, input_1], dim=1)
             else:
                 if self.act_quant_mode == 'qdiff':
+                    input_ = input
                     input = self.act_quantizer(input)
 
         if self.weight_quant:
