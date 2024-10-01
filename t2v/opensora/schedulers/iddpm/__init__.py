@@ -138,6 +138,7 @@ def forward_with_cfg(model, x, timestep, y, cfg_scale, return_trajectory=False, 
     # INFO: split the model forward along the batch
     # to enable different quant params for cond & uncond branch
     CFG_SPLIT = model.cfg_split if hasattr(model, 'cfg_split') else False  # DIRTY: read the cfg_split cfg from model
+
     if CFG_SPLIT:
         # DEBUG_ONLY
         half = x[: len(x) // 2] # actually use the 1st half of x
@@ -153,8 +154,8 @@ def forward_with_cfg(model, x, timestep, y, cfg_scale, return_trajectory=False, 
 
         half = x[: len(x) // 2] # use the 1st half of x, same for cond and uncond
 
-        model_output_cond = model.forward(half, t_cond, y_cond, **kwargs)
-        model_output_uncond = model.forward(half, t_uncond, y_uncond, **kwargs)
+        model_output_cond = model.model.forward(half, t_cond, y_cond, **kwargs)
+        model_output_uncond = model.model.forward(half, t_uncond, y_uncond, **kwargs)
 
         model_out = torch.cat([model_output_cond, model_output_uncond], dim=0)
     else:
@@ -165,11 +166,11 @@ def forward_with_cfg(model, x, timestep, y, cfg_scale, return_trajectory=False, 
 
     # INFO: for PTQD, the correlated noise correction & the 
 
-    ks = torch.load('./t2v/rebuttal_files/k_for_each_timestep.pth')
+    # ks = torch.load('./t2v/rebuttal_files/k_for_each_timestep.pth')
     # calib_quant_noise = torch.load('./rebuttal_files/calibrated_quant_noise.pth')
     # the correlated noise correction
-    timestep_idx = (999 - timestep[0]) // 50  # for 20 timesteps
-    model_out = model_out / (1+ks[timestep_idx])
+    # timestep_idx = (999 - timestep[0]) // 50  # for 20 timesteps
+    # model_out = model_out / (1+ks[timestep_idx])
     # the bias correction
     # model_out = model_out - calib_quant_noise[timestep]
 

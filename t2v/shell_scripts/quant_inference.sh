@@ -14,6 +14,5 @@ CUDA_VISIBLE_DEVICES=$GPU_ID python t2v/scripts/quant_txt2video.py $CFG \
     --precompute_text_embeds ./t2v/utils_files/text_embeds.pth \
 	--prompt_path t2v/assets/texts/t2v_samples_10.txt \
 	--quarot \
-	--part_fp \
-	--skip_quant_act \
+	#--skip_quant_act \
     # --save_dir $SAVE_DIR \

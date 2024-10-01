@@ -24,7 +24,8 @@ class SaveOutput:
     def __init__(self):
         self.outputs = []
     def __call__(self, module, module_in, module_out):
-        self.outputs.append(module_in[0].abs().max(dim=1)[0])
+        # self.outputs.append(module_in[0].abs().max(dim=1)[0])
+        self.outputs.append(module_in[0])
     def clear(self):
         self.outputs = []
 
@@ -127,12 +128,13 @@ def main():
 
     # i_block = 0
     for i_block in range(len(model.blocks)):
-        model.blocks[i_block].mlp.fc1.register_forward_hook(original_model_saved_fc1)
-        model.blocks[i_block].mlp.fc2.register_forward_hook(original_model_saved_fc2)
-        quarot_model.blocks[i_block].mlp.fc1.register_forward_hook(quarot_model_saved_fc1)
-        quarot_model.blocks[i_block].mlp.fc2.register_forward_hook(quarot_model_saved_fc2)
-        if i_block == 26:
-            quarot_model.blocks[i_block].attn.qk_rotater.register_forward_hook(quarot_model_saved_qk)
+        if i_block in [0,26]:
+            model.blocks[i_block].mlp.fc1.register_forward_hook(original_model_saved_fc1)
+            model.blocks[i_block].mlp.fc2.register_forward_hook(original_model_saved_fc2)
+            quarot_model.blocks[i_block].mlp.fc1.register_forward_hook(quarot_model_saved_fc1)
+            quarot_model.blocks[i_block].mlp.fc2.register_forward_hook(quarot_model_saved_fc2)
+        # if i_block == 26:
+            # quarot_model.blocks[i_block].attn.qk_rotater.register_forward_hook(quarot_model_saved_qk)
 
     if PRECOMPUTE_TEXT_EMBEDS is not None:
         text_encoder = None
@@ -203,11 +205,18 @@ def main():
             # original_model_saved.outputs[i] = original_model_saved.outputs[i].mean(dim=1) # [B, N_token, C] -> [B,C]
         # for i in range(len(quarot_model_saved.outputs)):
             # quarot_model_saved.outputs[i] = quarot_model_saved.outputs[i].mean(dim=1) # [B, N_token, C] -> [B,C]
+        d = {}
+        d['ori_fc1'] = original_model_saved_fc1.outputs
+        d['ori_fc2'] = original_model_saved_fc2.outputs
+        d['quarot_fc1'] = quarot_model_saved_fc1.outputs
+        d['quarot_fc2'] = quarot_model_saved_fc2.outputs
+        torch.save(d, './t2v/utils_files/quarot/quarot_model_saved_acts.pth')
+        import ipdb; ipdb.set_trace()
 
-        torch.save(original_model_saved_fc1.outputs, './t2v/utils_files/quarot/original_model_saved_fc1.pth')  # [N_block, N_timestep]
-        torch.save(original_model_saved_fc2.outputs, './t2v/utils_files/quarot/original_model_saved_fc2.pth')  # [N_block, N_timestep]
-        torch.save(quarot_model_saved_fc1.outputs, './t2v/utils_files/quarot/quarot_model_saved_fc1.pth')
-        torch.save(quarot_model_saved_fc2.outputs, './t2v/utils_files/quarot/quarot_model_saved_fc2.pth')
+        # torch.save(original_model_saved_fc1.outputs, './t2v/utils_files/quarot/original_model_saved_fc1.pth')  # [N_block, N_timestep]
+        # torch.save(original_model_saved_fc2.outputs, './t2v/utils_files/quarot/original_model_saved_fc2.pth')  # [N_block, N_timestep]
+        # torch.save(quarot_model_saved_fc1.outputs, './t2v/utils_files/quarot/quarot_model_saved_fc1.pth')
+        # torch.save(quarot_model_saved_fc2.outputs, './t2v/utils_files/quarot/quarot_model_saved_fc2.pth')
 
         d = {}
         d['q'] = quarot_model_saved_qk.Q

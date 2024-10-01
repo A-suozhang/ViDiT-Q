@@ -61,12 +61,15 @@ class QuarotMlp(Mlp):
             drop,
             use_conv,
             )
+        self.sq_first = False
 
     def forward(self, x, set_ipdb=False):
 
         dtype_ = self.fc1.weight.dtype
         device_ = x.device
 
+        if self.sq_first:
+            x = x / self.s_fc1.reshape([1,1,-1])
         x = torch.matmul(x.double(), self.Q).to(device_, dtype_)
 
         # K = 1
@@ -78,6 +81,8 @@ class QuarotMlp(Mlp):
         x = self.drop1(x)
         x = self.norm(x)
 
+        if self.sq_first:
+             x = x / self.s_fc2.reshape([1,1,-1])
         # quarot: rotate middle act: X*H
         x = torch.matmul(x.double(), self.H).to(device_, dtype_)
 
@@ -211,7 +216,6 @@ class QuarotSTDiTBlock(nn.Module):
         self.hidden_size = hidden_size
         self.enable_flashattn = enable_flashattn
         self._enable_sequence_parallelism = enable_sequence_parallelism
-        
 
         if enable_sequence_parallelism:
             self.attn_cls = SeqParallelAttention
@@ -255,8 +259,8 @@ class QuarotSTDiTBlock(nn.Module):
             enable_flashattn=self.enable_flashattn,
             separate_qkv=separate_qkv,
         )
-    
-    def quarot_rotate_weight(self):
+
+    def quarot_rotate_weight(self, i_block=None, sq_first=False):
 
         # quarot: inintialize the hadamard matrix
         # feature_size = 1152
@@ -267,6 +271,7 @@ class QuarotSTDiTBlock(nn.Module):
         # torch.cuda.empty_cache()
 
         dtype_ = torch.float32
+        alpha_ = self.channel_mask_alpha
 
         self.mlp.Q = self.Q
         self.mlp.H = self.H
@@ -276,6 +281,21 @@ class QuarotSTDiTBlock(nn.Module):
         self.mlp.fc1.to(dtype_)
         self.mlp.fc2.to(dtype_)
 
+        # ----- determine the channel_wise mask ------
+        if sq_first:
+            weight_fc1 = self.channel_masks[f'weight_block{i_block}_fc1']
+            weight_fc2 = self.channel_masks[f'weight_block{i_block}_fc2']
+            act_fc1 = self.channel_masks[f'act_block{i_block}_fc1']
+            act_fc2 = self.channel_masks[f'act_block{i_block}_fc2']
+
+            self.mlp.sq_first = True
+
+            self.mlp.s_fc1 = ((act_fc1)**alpha_) / ((weight_fc1 - self.mlp.fc1.weight.data.mean())**(1-alpha_))
+            self.mlp.fc1.weight.data = self.mlp.s_fc1.cpu() * self.mlp.fc1.weight.data
+
+            self.mlp.s_fc2 = ((act_fc2)**alpha_) / ((weight_fc2 - self.mlp.fc2.weight.data.mean())**(1-alpha_))
+            self.mlp.fc2.weight.data = self.mlp.s_fc2.cpu() * self.mlp.fc2.weight.data
+    
         # W_ = self.attn.q.weight.data.reshape([self.hidden_size,
         #                                 self.attn.num_heads,
         #                                 self.hidden_size//self.attn.num_heads])
@@ -336,7 +356,7 @@ class QuarotSTDiTBlock(nn.Module):
         output = self.drop_path(gate_mlp * self.mlp(t2i_modulate(self.norm2(x), shift_mlp, scale_mlp), set_ipdb=set_ipdb))
         if set_ipdb:
             import ipdb; ipdb.set_trace()
-            
+
         x = x + output
         
         if set_ipdb:
@@ -446,6 +466,9 @@ class QuarotSTDiT(nn.Module):
 
         # separate qkv layer for quantization
         self.separate_qkv = True
+        self.d_time_embed = {}
+
+        self.sq_first = True  # DIRTY
 
     def convert_quarot(self):
         feature_size = self.hidden_size
@@ -453,15 +476,28 @@ class QuarotSTDiT(nn.Module):
         self.Q = random_hadamard_matrix(feature_size, 'cuda')  # 1152
         self.H = random_hadamard_matrix(hidden_size, 'cuda')   # 4608
         self.attn_Q = random_hadamard_matrix(feature_size//self.num_heads, 'cuda')  # 72
+        self.channel_masks = torch.load('/home/zhaotianchen/project/viditq/ViDiT-Q/t2v/utils_files/channel_masks_fc.pth', map_location='cuda')
+        self.channel_mask_alpha = 0.65 # TBD
         gc.collect()  # cleanup memory
         torch.cuda.empty_cache()
 
-        for block in self.blocks:
+        for i_block, block in enumerate(self.blocks):
             block.Q = self.Q
             block.H = self.H
             block.attn_Q = self.attn_Q
+            block.channel_mask_alpha = self.channel_mask_alpha
+            block.channel_masks = self.channel_masks
 
-            block.quarot_rotate_weight()
+            # d_ = {}
+            # names = [
+            #     f'weight_block{i_block}_fc1',
+            #     f'weight_block{i_block}_fc2',
+            #     f'act_block{i_block}_fc1',
+            #     f'act_block{i_block}_fc2']
+            # for name in names:
+            #     d_[name] = self.channel_masks[name]
+
+            block.quarot_rotate_weight(i_block=i_block, sq_first=self.sq_first)
 
     def forward(self, x, timestep, y, mask=None):
         """
@@ -492,6 +528,8 @@ class QuarotSTDiT(nn.Module):
         t = self.t_embedder(timestep, dtype=x.dtype)  # [B, C]
         t0 = self.t_block(t)  # [B, 6 * C]
         y = self.y_embedder(y, self.training)  # [B, 1, N_token, C]
+
+        self.d_time_embed[f'{int(timestep[0])}'] = t0
 
         # INFO: the default opensora implementation is equivalent with mask_select=True
         # the mask_select will cause variant input y.shape (varying input activation shape), making **static** quantization hard to process

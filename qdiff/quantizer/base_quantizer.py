@@ -47,6 +47,7 @@ class BaseQuantizer(nn.Module):
         self.momentum = 0.95 if self.running_stat else None
         # INFO: seemingly always_zero means x_min should be 0, used in softmax quant, maybe rermove later, or a better name?
         self.always_zero = quant_config.get('always_zero', False)
+        assert not self.always_zero
 
         # quant parameters: [bitwidth, timestep]
         if self.mixed_precision is not None:
@@ -158,7 +159,7 @@ class BaseQuantizer(nn.Module):
             i_bitwidth = 0
         if n_bits is None:
             n_bits = self.n_bits
-        n_levels = 2 ** n_bits if not self.sym else 2 ** (n_bits - 1) - 1
+        self.n_levels = 2 ** n_bits if not self.sym else 2 ** (n_bits - 1) - 1
 
         delta, zero_point = None, None
         x_shape = x.shape
@@ -215,9 +216,9 @@ class BaseQuantizer(nn.Module):
             x_absmax = torch.maximum(x_min.abs(),x_max.abs())
             # x_absmax = torch.maximum(x.min(dim=-1)[0].abs(),x.max(dim=-1)[0].abs())  # ???: donnot know why not using x_min
             if self.sym: # symmetric_quant
-                delta = x_absmax/n_levels
+                delta = x_absmax/self.n_levels
             else:
-                delta = (x_max - x_min)/(n_levels-1)
+                delta = (x_max - x_min)/(self.n_levels-1)
             eps = 1.e-6
             if delta.min() < eps:  # if contain small range
                 delta = delta.fill_(eps)
@@ -231,7 +232,6 @@ class BaseQuantizer(nn.Module):
                 # zero_point = torch.round(-x_min/delta)  # directly use the FP zero, as the zero_point
 
         elif self.scale_method == 'grid_search_lp':
-
             eps=1.e-5
             best_score = 1.e10
             step_size = 0.01
@@ -243,13 +243,11 @@ class BaseQuantizer(nn.Module):
             x_q = self.quantize(x_ranged,scaled_max,scaled_min,n_batch=n_step)
             lp_loss_ranged = lp_loss(x_ranged, x_q, p=2., reduction='none',n_batch=n_step)  # [N_bs]
             min_idx = torch.argmin(lp_loss_ranged) # the min idx 
-            if not self.always_zero:
-                delta = (scaled_max[min_idx]-scaled_min[min_idx])/(2**n_bits-1)
-                # DEBUG: delta seems to could be all-zero, is it right though?
-                zero_point = (-scaled_min[min_idx]/delta+eps).round()
-            else:
-                delta = scaled_max[min_idx]/(2**n_bits-1)
-                zero_point = torch.zeros_like(delta)
+            # min_idx = len(range_scaling)-1  # DEBUG_ONLY
+            logger.info('running search of delta for layer: {}, the range is {:.3f} of minmax'.format(self.module_name, min_idx/int(1/step_size)))
+
+            delta = (scaled_max[min_idx]-scaled_min[min_idx])/(2**n_bits-1)
+            zero_point = ((x_mean - scaled_min[min_idx])/delta + eps).round()
         else:
             # import ipdb; ipdb.set_trace()
             raise NotImplementedError
@@ -292,6 +290,9 @@ class BaseQuantizer(nn.Module):
         self.delta_list[i_bitwidth, self.cur_timestep_id] = delta  # when timestep_wise=False, self.cur_timestep_id=-1, index the only one
         self.zero_point_list[i_bitwidth, self.cur_timestep_id] = zero_point
 
+        self.delta = delta
+        self.zero_point = zero_point
+
     def quantize(self, x, x_max, x_min, n_batch=None):
         '''quantizing with given x_max, x_min, instead using delta and zero_point'''
         # when max, min has shape [N_bs], x has [N_bs, x_shape]
@@ -303,14 +304,18 @@ class BaseQuantizer(nn.Module):
 
         # quantize with given max and min values
         eps=1.e-4
-        delta = (x_max - x_min) / (2 ** self.n_bits - 1) if not self.always_zero else x_max / (2 ** self.n_bits - 1)
-        zero_point = (- x_min / (delta + eps)).round() if not self.always_zero else 0
+        assert not self.always_zero
+        delta = (x_max - x_min) / self.n_levels
+        zero_point = ((x.mean() - x_min) / (delta + eps)).round()
         if n_batch is not None:
             delta = delta.reshape(list(delta.shape)+[1]*(len(x.shape) - len(delta.shape)))
             zero_point = zero_point.reshape(list(zero_point.shape)+[1]*(len(x.shape) - len(zero_point.shape)))
         # we assume weight quantization is always signed
         x_int = torch.round(x / (delta + eps))
-        x_quant = torch.clamp(x_int + zero_point, 0, self.n_levels - 1)
+        if self.sym:
+            x_quant = torch.clamp(x_int + zero_point, -self.n_levels-1, self.n_levels)
+        else:
+            x_quant = torch.clamp(x_int + zero_point, 0, self.n_levels - 1)
         x_dequant = (x_quant - zero_point) * delta
 
         # check nan

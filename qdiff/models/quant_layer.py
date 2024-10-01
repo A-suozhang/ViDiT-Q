@@ -30,7 +30,7 @@ class QuantLayer(nn.Module):
         # self._orginal_module = org_module
         self.weight_quant_params = weight_quant_params
         self.act_quant_params = act_quant_params
-        
+
         if isinstance(org_module, nn.Conv2d):
             self.fwd_kwargs = dict(stride=org_module.stride, padding=org_module.padding,
                                    dilation=org_module.dilation, groups=org_module.groups)
@@ -138,6 +138,7 @@ class QuantLayer(nn.Module):
                 raise NotImplementedError
 
             input = input / channel_wise_scale
+
         else:
             # for timeranges, update the act_scale for each timerange respectively
             if not hasattr(self, 'timerange'):
